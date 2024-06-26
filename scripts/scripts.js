@@ -1,16 +1,16 @@
 import {
   sampleRUM,
   buildBlock,
-  getAllMetadata,
-  getMetadata,
   loadHeader,
   loadFooter,
   decorateButtons,
   decorateIcons,
   decorateSections,
+  decorateBlock,
   decorateBlocks,
   decorateTemplateAndTheme,
   waitForLCP,
+  loadBlock,
   loadBlocks,
   loadCSS,
 } from './lib-franklin.js';
@@ -40,9 +40,10 @@ window.hlx.plugins.add('rum-conversion', {
 });
 
 window.hlx.plugins.add('experimentation', {
-  condition: () => getMetadata('experiment')
-    || Object.keys(getAllMetadata('campaign')).length
-    || Object.keys(getAllMetadata('audience')).length,
+  condition: () => document.head.querySelector('[name^="experiment"],[name^="campaign-"],[name^="audience-"]')
+    || document.head.querySelector('[property^="campaign:-"],[property^="audience:-"]')
+    || document.querySelector('.section[class*="experiment-"],.section[class*="audience-"],.section[class*="campaign-"]')
+    || [...document.querySelectorAll('.section-metadata div')].some((d) => d.textContent.match(/Experiment|Campaign|Audience/i)),
   options: { audiences: AUDIENCES },
   load: 'eager',
   url: '/plugins/experimentation/src/index.js',
@@ -182,7 +183,6 @@ export function decorateMain(main) {
 async function loadEager(doc) {
   document.documentElement.lang = 'en';
   decorateTemplateAndTheme();
-
   await window.hlx.plugins.run('loadEager');
 
   // load demo config
@@ -274,6 +274,28 @@ async function loadPage() {
   loadDelayed();
   await setupAnalytics;
 }
+
+// Properly decorate fragments that were pulled in
+document.addEventListener('aem:experimentation', (ev) => {
+  // Do not redecorate the default content
+  if (ev.detail.variant === 'control' || ev.detail?.campaign === 'default' || ev.detail?.audience === 'default') {
+    return;
+  }
+  // Rebuild the autoblock as needed
+  if (ev.detail.element.classList.contains('hero')) {
+    const parent = ev.detail.element.parentElement.parentElement;
+    [...ev.detail.element.children].reverse().forEach((el) => parent.prepend(el));
+    ev.detail.element.remove();
+    // Rebuild and redecorate the hero block
+    buildHeroBlock(parent);
+    decorateBlocks(parent);
+    loadBlocks(parent);
+  } else if (ev.detail.element.classList.contains('block')) {
+    // Otherwise, just reset the replaced blocks and redecorate them
+    decorateBlock(ev.detail.element);
+    loadBlock(ev.detail.element);
+  }
+});
 
 const cwv = {};
 
